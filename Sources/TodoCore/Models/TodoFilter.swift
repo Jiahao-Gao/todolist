@@ -44,41 +44,13 @@ public enum TodoFilter: String, CaseIterable, Identifiable, Sendable {
         case .all:
             !item.isCompleted
         case .today:
-            !item.isCompleted && (item.dueDate.map { calendar.isDate($0, inSameDayAs: referenceDate) } ?? false)
+            !item.isCompleted && item.isDueToday(referenceDate: referenceDate, calendar: calendar)
         case .upcoming:
-            !item.isCompleted && isWithinUpcomingWindow(item.dueDate, referenceDate: referenceDate, calendar: calendar)
+            !item.isCompleted && item.isUpcoming(referenceDate: referenceDate, calendar: calendar)
         case .overdue:
-            !item.isCompleted && isOverdue(item.dueDate, referenceDate: referenceDate, calendar: calendar)
+            item.isOverdue(referenceDate: referenceDate, calendar: calendar)
         case .completed:
             item.isCompleted
         }
-    }
-
-    private func isWithinUpcomingWindow(
-        _ dueDate: Date?,
-        referenceDate: Date,
-        calendar: Calendar
-    ) -> Bool {
-        guard let dueDate,
-              let windowEnd = calendar.date(byAdding: .day, value: 14, to: calendar.startOfDay(for: referenceDate)) else {
-            return false
-        }
-
-        let dueDay = calendar.startOfDay(for: dueDate)
-        let windowStart = calendar.startOfDay(for: referenceDate)
-
-        return dueDay >= windowStart && dueDay <= windowEnd
-    }
-
-    private func isOverdue(
-        _ dueDate: Date?,
-        referenceDate: Date,
-        calendar: Calendar
-    ) -> Bool {
-        guard let dueDate else {
-            return false
-        }
-
-        return calendar.startOfDay(for: dueDate) < calendar.startOfDay(for: referenceDate)
     }
 }

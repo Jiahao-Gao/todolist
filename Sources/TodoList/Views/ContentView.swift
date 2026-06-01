@@ -46,6 +46,12 @@ struct ContentView: View {
                 }
                 .help("New Todo")
 
+                Button(action: sortAllTodosByDate) {
+                    Label("Sort Todos", systemImage: "arrow.up.arrow.down")
+                }
+                .help(currentFilter == .all ? "Sort Todos by Date" : "Sort is available in All")
+                .disabled(currentFilter != .all)
+
                 Button(role: .destructive, action: deleteSelectedTodo) {
                     Label("Delete Todo", systemImage: "trash")
                 }
@@ -146,6 +152,14 @@ struct ContentView: View {
         if let selectedID = selectedTodoID.wrappedValue, store.todo(id: selectedID) == nil {
             selectedTodoID.wrappedValue = nil
         }
+    }
+
+    private func sortAllTodosByDate() {
+        guard currentFilter == .all else {
+            return
+        }
+
+        store.sortAllByDate()
     }
 
     private func addSubtaskToSelectedTodo() {

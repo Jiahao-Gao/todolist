@@ -72,8 +72,7 @@ struct TodoListView: View {
                     mainGroupSeparator
                 }
 
-                Spacer()
-                    .frame(height: mainBorderGap)
+                deselectGap(height: mainBorderGap)
 
                 HStack(spacing: 4) {
                     Button {
@@ -96,6 +95,10 @@ struct TodoListView: View {
                             toggleAction(item.id)
                         }
                     )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selection = item.id
+                    }
                 }
                 .padding(.horizontal, rowHorizontalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,8 +109,7 @@ struct TodoListView: View {
                 }
 
                 if item.subtasks.isEmpty || !isExpanded(item) {
-                    Spacer()
-                        .frame(height: mainBorderGap)
+                    deselectGap(height: mainBorderGap)
 
                     mainGroupSeparator
                 }
@@ -126,12 +128,15 @@ struct TodoListView: View {
     ) -> some View {
         reorderableRow(todoID: subtask.id, dropTarget: .subtask(subtask.id)) {
             VStack(spacing: 0) {
-                Spacer()
-                    .frame(height: subtaskGap)
+                deselectGap(height: subtaskGap)
 
                 HStack(spacing: 0) {
                     Color.clear
                         .frame(width: subtaskIndent)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selection = nil
+                        }
 
                     TodoRowView(
                         todo: subtask,
@@ -147,11 +152,15 @@ struct TodoListView: View {
                             rowSelectionBackground
                         }
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selection = subtask.id
+                    }
                 }
+                .padding(.horizontal, rowHorizontalPadding)
 
                 if isLastInGroup {
-                    Spacer()
-                        .frame(height: mainBorderGap)
+                    deselectGap(height: mainBorderGap)
 
                     mainGroupSeparator
                 }
@@ -173,6 +182,9 @@ struct TodoListView: View {
                 if dropPreview == .listEnd {
                     insertionLine
                 }
+            }
+            .onTapGesture {
+                selection = nil
             }
             .onDrop(
                 of: [.plainText],
@@ -196,9 +208,6 @@ struct TodoListView: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    selection = todoID
-                }
                 .opacity(draggingTodoID == todoID ? 0.55 : 1)
                 .onDrag {
                     draggingTodoID = todoID
@@ -242,9 +251,6 @@ struct TodoListView: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    selection = todoID
-                }
         }
     }
 
@@ -310,11 +316,25 @@ struct TodoListView: View {
             .fill(Color.accentColor.opacity(0.9))
     }
 
+    private func deselectGap(height: CGFloat) -> some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selection = nil
+            }
+    }
+
     private var mainGroupSeparator: some View {
         Rectangle()
             .fill(Color.secondary.opacity(0.36))
             .frame(height: 1.5)
             .padding(.horizontal, rowHorizontalPadding)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selection = nil
+            }
     }
 }
 
@@ -534,7 +554,7 @@ private struct EmptyListClickDeselector: NSViewRepresentable {
                 return
             }
 
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 self?.clearSelectionIfNeeded(for: event)
                 return event
             }

@@ -27,10 +27,11 @@ struct TodoRowView: View {
 
             Spacer(minLength: 12)
 
-            if let dueDate = todo.dueDate {
-                Text(dueDate, style: .date)
+            if let scheduleText {
+                Text(scheduleText)
                     .font(AppTypography.taskDate(appFontName))
                     .foregroundStyle(dueDateForeground)
+                    .lineLimit(1)
             }
         }
         .font(AppTypography.body(appFontName))
@@ -59,5 +60,20 @@ struct TodoRowView: View {
         }
 
         return todo.isOverdue() ? .red : .secondary
+    }
+
+    private var scheduleText: String? {
+        guard let dueDate = todo.dueDate else {
+            return nil
+        }
+
+        let startText = dueDate.formatted(date: .abbreviated, time: .omitted)
+
+        guard let endDate = todo.endDate,
+              !Calendar.current.isDate(endDate, inSameDayAs: dueDate) else {
+            return startText
+        }
+
+        return "\(startText) - \(endDate.formatted(date: .abbreviated, time: .omitted))"
     }
 }

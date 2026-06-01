@@ -6,6 +6,8 @@ public struct TodoItem: Identifiable, Codable, Equatable, Sendable {
     public var notes: String
     public var isCompleted: Bool
     public var dueDate: Date?
+    public var endDate: Date?
+    public var order: Int
     public var subtasks: [TodoItem]
 
     public init(
@@ -14,6 +16,8 @@ public struct TodoItem: Identifiable, Codable, Equatable, Sendable {
         notes: String = "",
         isCompleted: Bool = false,
         dueDate: Date? = nil,
+        endDate: Date? = nil,
+        order: Int = 0,
         subtasks: [TodoItem] = []
     ) {
         self.id = id
@@ -21,6 +25,8 @@ public struct TodoItem: Identifiable, Codable, Equatable, Sendable {
         self.notes = notes
         self.isCompleted = isCompleted
         self.dueDate = dueDate
+        self.endDate = endDate
+        self.order = order
         self.subtasks = subtasks
     }
 
@@ -41,7 +47,25 @@ public struct TodoItem: Identifiable, Codable, Equatable, Sendable {
             return false
         }
 
-        return calendar.isDate(dueDate, inSameDayAs: referenceDate)
+        let startDay = calendar.startOfDay(for: dueDate)
+        let endDay = calendar.startOfDay(for: endDate ?? dueDate)
+        let referenceDay = calendar.startOfDay(for: referenceDate)
+        let rangeStart = min(startDay, endDay)
+        let rangeEnd = max(startDay, endDay)
+
+        return rangeStart <= referenceDay && referenceDay <= rangeEnd
+    }
+
+    public func isUpcoming(referenceDate: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard let dueDate,
+              let windowStart = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: referenceDate)),
+              let windowEnd = calendar.date(byAdding: .day, value: 14, to: calendar.startOfDay(for: referenceDate)) else {
+            return false
+        }
+
+        let dueDay = calendar.startOfDay(for: dueDate)
+
+        return dueDay >= windowStart && dueDay <= windowEnd
     }
 
     public func isOverdue(referenceDate: Date = Date(), calendar: Calendar = .current) -> Bool {
@@ -49,7 +73,9 @@ public struct TodoItem: Identifiable, Codable, Equatable, Sendable {
             return false
         }
 
-        return calendar.startOfDay(for: dueDate) < calendar.startOfDay(for: referenceDate)
+        let overdueDate = endDate ?? dueDate
+
+        return calendar.startOfDay(for: overdueDate) < calendar.startOfDay(for: referenceDate)
     }
 }
 
@@ -60,6 +86,8 @@ extension TodoItem {
         case notes
         case isCompleted
         case dueDate
+        case endDate
+        case order
         case subtasks
     }
 
@@ -71,6 +99,8 @@ extension TodoItem {
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
         dueDate = try container.decodeIfPresent(Date.self, forKey: .dueDate)
+        endDate = try container.decodeIfPresent(Date.self, forKey: .endDate)
+        order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 0
         subtasks = try container.decodeIfPresent([TodoItem].self, forKey: .subtasks) ?? []
     }
 
@@ -82,6 +112,8 @@ extension TodoItem {
         try container.encode(notes, forKey: .notes)
         try container.encode(isCompleted, forKey: .isCompleted)
         try container.encodeIfPresent(dueDate, forKey: .dueDate)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+        try container.encode(order, forKey: .order)
         try container.encode(subtasks, forKey: .subtasks)
     }
 }

@@ -35,16 +35,21 @@ public final class TodoStore: ObservableObject {
     public func addTodo(
         title: String = "New Todo",
         notes: String = "",
-        dueDate: Date? = nil
+        dueDate: Date? = nil,
+        endDate: Date? = nil
     ) -> TodoItem {
         let item = TodoItem(
             title: title,
             notes: notes,
-            dueDate: dueDate
+            dueDate: dueDate,
+            endDate: endDate
         )
 
-        items.insert(item, at: 0)
-        return item
+        var updatedItems = items
+        updatedItems.insert(item, at: 0)
+        items = updatedItems.renumberedBySiblingOrder()
+
+        return todo(id: item.id) ?? item
     }
 
     @discardableResult
@@ -52,25 +57,31 @@ public final class TodoStore: ObservableObject {
         to parentID: TodoItem.ID,
         title: String = "New Subtask",
         notes: String = "",
-        dueDate: Date? = nil
+        dueDate: Date? = nil,
+        endDate: Date? = nil
     ) -> TodoItem? {
-        guard let parentIndex = items.firstIndex(where: { $0.id == parentID }) else {
+        var updatedItems = items
+
+        guard let parentIndex = updatedItems.firstIndex(where: { $0.id == parentID }) else {
             return nil
         }
 
         var subtask = TodoItem(
             title: title,
             notes: notes,
-            isCompleted: items[parentIndex].isCompleted,
-            dueDate: dueDate ?? items[parentIndex].dueDate
+            isCompleted: updatedItems[parentIndex].isCompleted,
+            dueDate: dueDate ?? updatedItems[parentIndex].dueDate,
+            endDate: endDate ?? updatedItems[parentIndex].endDate
         )
 
-        if items[parentIndex].isCompleted {
+        if updatedItems[parentIndex].isCompleted {
             subtask.completeIncludingSubtasks()
         }
 
-        items[parentIndex].subtasks.insert(subtask, at: 0)
-        return subtask
+        updatedItems[parentIndex].subtasks.insert(subtask, at: 0)
+        items = updatedItems.renumberedBySiblingOrder()
+
+        return todo(id: subtask.id) ?? subtask
     }
 
     public func update(_ item: TodoItem) {
@@ -100,19 +111,25 @@ public final class TodoStore: ObservableObject {
     }
 
     public func delete(ids: Set<TodoItem.ID>) {
-        items.removeAll { ids.contains($0.id) }
+        var updatedItems = items
+        updatedItems.removeAll { ids.contains($0.id) }
 
-        for index in items.indices {
-            items[index].deleteSubtasks(ids: ids)
+        for index in updatedItems.indices {
+            updatedItems[index].deleteSubtasks(ids: ids)
         }
+
+        items = updatedItems.renumberedBySiblingOrder()
     }
 
     public func clearCompleted() {
-        items.removeAll { $0.isCompleted }
+        var updatedItems = items
+        updatedItems.removeAll { $0.isCompleted }
 
-        for index in items.indices {
-            items[index].removeCompletedSubtasks()
+        for index in updatedItems.indices {
+            updatedItems[index].removeCompletedSubtasks()
         }
+
+        items = updatedItems.renumberedBySiblingOrder()
     }
 
     public func moveTodo(id: TodoItem.ID, before targetID: TodoItem.ID) {
@@ -131,10 +148,12 @@ public final class TodoStore: ObservableObject {
         }
 
         if insertSubtask(movedItem, intoParent: parentID) {
+            renumberItemOrders()
             return
         }
 
         items.append(movedItem)
+        renumberItemOrders()
     }
 
     public func moveTodoToEndAsMain(id: TodoItem.ID) {
@@ -143,6 +162,7 @@ public final class TodoStore: ObservableObject {
         }
 
         items.append(movedItem)
+        renumberItemOrders()
     }
 
     public func todo(id: TodoItem.ID) -> TodoItem? {
@@ -165,15 +185,17 @@ public final class TodoStore: ObservableObject {
         referenceDate: Date = Date(),
         calendar: Calendar = .current
     ) -> [TodoItem] {
-        let filteredItems = items
+        items
+            .sortedByStoredOrder()
             .compactMap { $0.filtered(for: filter, referenceDate: referenceDate, calendar: calendar) }
             .filter { $0.matches(searchText: searchText) }
+    }
 
-        guard filter != .all else {
-            return filteredItems
-        }
-
-        return filteredItems.sortedByTodoOrder(referenceDate: referenceDate, calendar: calendar)
+    public func sortAllByDate(calendar: Calendar = .current) {
+        items = items
+            .sortedByStoredOrder()
+            .sortedBySchedule(calendar: calendar)
+            .renumberedBySiblingOrder()
     }
 
     public func count(
@@ -187,10 +209,13 @@ public final class TodoStore: ObservableObject {
     private func load(seedSamples: Bool) {
         do {
             let loadedItems = try persistence.load()
-            items = loadedItems.isEmpty && seedSamples ? Self.sampleItems() : loadedItems
+            items = (loadedItems.isEmpty && seedSamples ? Self.sampleItems() : loadedItems)
+                .sortedByStoredOrder()
+                .renumberedBySiblingOrder()
             lastErrorMessage = nil
         } catch {
-            items = seedSamples ? Self.sampleItems() : []
+            items = (seedSamples ? Self.sampleItems() : [])
+                .renumberedBySiblingOrder()
             lastErrorMessage = "Could not load todos: \(error.localizedDescription)"
         }
     }
@@ -228,6 +253,12 @@ public final class TodoStore: ObservableObject {
         if !didInsert {
             items.append(movedItem)
         }
+
+        renumberItemOrders()
+    }
+
+    private func renumberItemOrders() {
+        items = items.renumberedBySiblingOrder()
     }
 
     private func removeTodo(id: TodoItem.ID) -> TodoItem? {
@@ -516,19 +547,28 @@ private extension TodoFilter {
 }
 
 private extension Array where Element == TodoItem {
-    func sortedByTodoOrder(referenceDate: Date, calendar: Calendar) -> [TodoItem] {
-        sorted { lhs, rhs in
-            if lhs.isCompleted != rhs.isCompleted {
-                return !lhs.isCompleted
-            }
+    func sortedByStoredOrder() -> [TodoItem] {
+        stableSorted { lhs, rhs in
+            lhs.order < rhs.order
+        }
+        .map { item in
+            var orderedItem = item
+            orderedItem.subtasks = item.subtasks.sortedByStoredOrder()
+            return orderedItem
+        }
+    }
 
-            switch (lhs.dueDate, rhs.dueDate) {
-            case let (lhsDue?, rhsDue?):
-                let lhsDay = calendar.startOfDay(for: lhsDue)
-                let rhsDay = calendar.startOfDay(for: rhsDue)
-
-                if lhsDay != rhsDay {
-                    return lhsDay < rhsDay
+    func sortedBySchedule(calendar: Calendar) -> [TodoItem] {
+        map { item in
+            var sortedItem = item
+            sortedItem.subtasks = item.subtasks.sortedBySchedule(calendar: calendar)
+            return sortedItem
+        }
+        .stableSorted { lhs, rhs in
+            switch (lhs.effectiveScheduleSortDate(calendar: calendar), rhs.effectiveScheduleSortDate(calendar: calendar)) {
+            case let (lhsDate?, rhsDate?):
+                if lhsDate != rhsDate {
+                    return lhsDate < rhsDate
                 }
             case (_?, nil):
                 return true
@@ -538,7 +578,51 @@ private extension Array where Element == TodoItem {
                 break
             }
 
-            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            return false
         }
+    }
+
+    func renumberedBySiblingOrder() -> [TodoItem] {
+        enumerated().map { index, item in
+            var renumberedItem = item
+            renumberedItem.order = index
+            renumberedItem.subtasks = item.subtasks.renumberedBySiblingOrder()
+            return renumberedItem
+        }
+    }
+
+    private func stableSorted(
+        by areInIncreasingOrder: (TodoItem, TodoItem) -> Bool
+    ) -> [TodoItem] {
+        enumerated()
+            .sorted { lhs, rhs in
+                if areInIncreasingOrder(lhs.element, rhs.element) {
+                    return true
+                }
+
+                if areInIncreasingOrder(rhs.element, lhs.element) {
+                    return false
+                }
+
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+}
+
+private extension TodoItem {
+    func effectiveScheduleSortDate(calendar: Calendar) -> Date? {
+        if let subtaskDate = subtasks.compactMap({ $0.earliestScheduleDate(calendar: calendar) }).min() {
+            return subtaskDate
+        }
+
+        return dueDate.map { calendar.startOfDay(for: $0) }
+    }
+
+    func earliestScheduleDate(calendar: Calendar) -> Date? {
+        let dates = [dueDate.map { calendar.startOfDay(for: $0) }]
+            + subtasks.map { $0.earliestScheduleDate(calendar: calendar) }
+
+        return dates.compactMap { $0 }.min()
     }
 }

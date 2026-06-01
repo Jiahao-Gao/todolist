@@ -20,14 +20,25 @@ struct TodoDetailView: View {
             }
 
             Section("Schedule") {
-                Toggle("Due Date", isOn: hasDueDate)
+                Toggle("Start Date", isOn: hasStartDate)
 
                 if todo.dueDate != nil {
                     DatePicker(
-                        "Due",
-                        selection: dueDate,
+                        "Start",
+                        selection: startDate,
                         displayedComponents: [.date]
                     )
+
+                    Toggle("End Date", isOn: hasEndDate)
+
+                    if todo.endDate != nil {
+                        DatePicker(
+                            "End",
+                            selection: endDate,
+                            in: endDateRange,
+                            displayedComponents: [.date]
+                        )
+                    }
                 }
             }
 
@@ -58,20 +69,57 @@ struct TodoDetailView: View {
         .navigationTitle(todo.title.isEmpty ? "Todo" : todo.title)
     }
 
-    private var hasDueDate: Binding<Bool> {
+    private var hasStartDate: Binding<Bool> {
         Binding {
             todo.dueDate != nil
         } set: { hasDate in
-            todo.dueDate = hasDate ? todo.dueDate ?? Date() : nil
+            if hasDate {
+                todo.dueDate = todo.dueDate ?? Date()
+            } else {
+                todo.dueDate = nil
+                todo.endDate = nil
+            }
         }
     }
 
-    private var dueDate: Binding<Date> {
+    private var startDate: Binding<Date> {
         Binding {
             todo.dueDate ?? Date()
         } set: { newDate in
             todo.dueDate = newDate
+
+            if let endDate = todo.endDate, endDate < newDate {
+                todo.endDate = newDate
+            }
         }
+    }
+
+    private var hasEndDate: Binding<Bool> {
+        Binding {
+            todo.endDate != nil
+        } set: { hasDate in
+            guard hasDate else {
+                todo.endDate = nil
+                return
+            }
+
+            let startDate = todo.dueDate ?? Date()
+            todo.dueDate = startDate
+            todo.endDate = max(todo.endDate ?? startDate, startDate)
+        }
+    }
+
+    private var endDate: Binding<Date> {
+        Binding {
+            todo.endDate ?? todo.dueDate ?? Date()
+        } set: { newDate in
+            let minimumDate = todo.dueDate ?? newDate
+            todo.endDate = max(newDate, minimumDate)
+        }
+    }
+
+    private var endDateRange: PartialRangeFrom<Date> {
+        (todo.dueDate ?? Date())...
     }
 
     private func deleteSubtask(id: TodoItem.ID) {
@@ -104,8 +152,8 @@ private struct SubtaskEditorRow: View {
 
             Spacer(minLength: 12)
 
-            if let dueDate = subtask.dueDate {
-                Text(dueDate, style: .date)
+            if let scheduleText {
+                Text(scheduleText)
                     .font(AppTypography.taskDate(appFontName))
                     .foregroundStyle(subtask.isOverdue() ? .red : .secondary)
                     .lineLimit(1)
@@ -137,6 +185,21 @@ private struct SubtaskEditorRow: View {
         let title = subtask.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return title.isEmpty ? "Untitled Subtask" : title
+    }
+
+    private var scheduleText: String? {
+        guard let dueDate = subtask.dueDate else {
+            return nil
+        }
+
+        let startText = dueDate.formatted(date: .abbreviated, time: .omitted)
+
+        guard let endDate = subtask.endDate,
+              !Calendar.current.isDate(endDate, inSameDayAs: dueDate) else {
+            return startText
+        }
+
+        return "\(startText) - \(endDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func toggleCompletion() {
