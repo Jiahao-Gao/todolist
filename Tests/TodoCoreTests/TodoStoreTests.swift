@@ -6,7 +6,7 @@ final class TodoStoreTests: XCTestCase {
     func testTodoFilterOrderPlacesOverdueBelowCompleted() {
         XCTAssertEqual(
             TodoFilter.allCases.map(\.title),
-            ["All", "Today", "Upcoming", "Completed", "Overdue"]
+            ["All", "Today", "Upcoming", "Completed", "Overdue", "Recurrent"]
         )
     }
 
@@ -147,6 +147,67 @@ final class TodoStoreTests: XCTestCase {
             store.filteredItems(for: .upcoming, referenceDate: referenceDate, calendar: calendar).map(\.id),
             [laterTask.id, earlierTask.id]
         )
+    }
+
+    func testUpdatingMainTaskWithRecurrenceMovesItToRecurrentEvents() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let startDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        var task = store.addTodo(title: "Plan standup", dueDate: startDate)
+        task.recurrenceRule = RecurrenceRule(frequency: .weekly, weekday: 2)
+        store.update(task)
+
+        XCTAssertNil(store.items.first { $0.id == task.id })
+        XCTAssertEqual(store.filteredItems(for: .recurrent).map(\.id), [task.id])
+
+        var event = try XCTUnwrap(store.todo(id: task.id))
+        event.recurrenceRule = nil
+        store.update(event)
+
+        XCTAssertEqual(store.filteredItems(for: .recurrent).map(\.id), [])
+        XCTAssertEqual(store.filteredItems(for: .all).map(\.id), [task.id])
+    }
+
+    func testGenerateDueRecurrencesCreatesOneNormalTaskForMatchingDay() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let monday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        var event = store.addTodo(title: "Weekly sync", dueDate: monday)
+        event.notes = "Carry notes"
+        event.recurrenceRule = RecurrenceRule(frequency: .weekly, weekday: 2, occurrenceLimit: 2)
+        store.update(event)
+
+        XCTAssertTrue(store.generateDueRecurrences(referenceDate: monday, calendar: calendar))
+        XCTAssertFalse(store.generateDueRecurrences(referenceDate: monday, calendar: calendar))
+
+        let generated = try XCTUnwrap(store.filteredItems(for: .today, referenceDate: monday, calendar: calendar).first)
+        XCTAssertNotEqual(generated.id, event.id)
+        XCTAssertEqual(generated.title, "Weekly sync")
+        XCTAssertEqual(generated.notes, "Carry notes")
+        XCTAssertEqual(generated.recurrenceSourceID, event.id)
+        XCTAssertNil(generated.recurrenceRule)
+        XCTAssertEqual(store.recurrenceSource(for: generated)?.id, event.id)
+    }
+
+    func testRecurrenceOccurrenceLimitStopsFutureGeneration() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let monday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+        let secondMonday = try XCTUnwrap(calendar.date(byAdding: .day, value: 7, to: monday))
+        let thirdMonday = try XCTUnwrap(calendar.date(byAdding: .day, value: 14, to: monday))
+
+        var event = store.addTodo(title: "Two Mondays", dueDate: monday)
+        event.recurrenceRule = RecurrenceRule(frequency: .weekly, weekday: 2, occurrenceLimit: 2)
+        store.update(event)
+
+        XCTAssertTrue(store.generateDueRecurrences(referenceDate: monday, calendar: calendar))
+        XCTAssertTrue(store.generateDueRecurrences(referenceDate: secondMonday, calendar: calendar))
+        XCTAssertFalse(store.generateDueRecurrences(referenceDate: thirdMonday, calendar: calendar))
     }
 
     func testMoveSubtaskWithinParentOrder() throws {
@@ -347,6 +408,146 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(reloadedStore.todo(id: subtask.id)?.endDate, endDate)
     }
 
+    func testTagsFilterMainTasksAndAreInheritedBySubtasks() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let tag = store.addTag(name: "Work")
+        var main = store.addTodo(title: "Launch")
+        main.tagID = tag.id
+        store.update(main)
+        let subtask = try XCTUnwrap(store.addSubtask(to: main.id, title: "Draft"))
+        _ = store.addTodo(title: "Personal")
+
+        XCTAssertEqual(store.filteredItems(forTag: tag.id).map(\.id), [main.id])
+        XCTAssertEqual(store.todo(id: subtask.id)?.tagID, tag.id)
+        XCTAssertEqual(store.effectiveTag(for: try XCTUnwrap(store.todo(id: subtask.id)))?.id, tag.id)
+
+        store.deleteTag(id: tag.id)
+
+        XCTAssertTrue(store.tags.isEmpty)
+        XCTAssertNil(store.todo(id: main.id)?.tagID)
+        XCTAssertNil(store.todo(id: subtask.id)?.tagID)
+    }
+
+    func testDeleteMovesTaskToTrashAndRecoverRestoresIt() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let task = store.addTodo(title: "Restore me")
+
+        store.delete(id: task.id)
+
+        XCTAssertNil(store.todo(id: task.id))
+        XCTAssertEqual(store.filteredTrashItems().map(\.id), [task.id])
+        XCTAssertEqual(store.trashTodo(id: task.id)?.trashOrigin, .active)
+        XCTAssertNotNil(store.trashTodo(id: task.id)?.deletedAt)
+
+        store.recoverTrash(ids: [task.id])
+
+        XCTAssertEqual(store.filteredItems(for: .all).map(\.id), [task.id])
+        XCTAssertNil(store.trashTodo(id: task.id))
+        XCTAssertNil(store.todo(id: task.id)?.deletedAt)
+    }
+
+    func testClearTrashPermanentlyRemovesTask() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let task = store.addTodo(title: "Clear me")
+
+        store.delete(id: task.id)
+        store.clearTrash(ids: [task.id])
+
+        XCTAssertNil(store.todo(id: task.id))
+        XCTAssertNil(store.trashTodo(id: task.id))
+        XCTAssertTrue(store.filteredTrashItems().isEmpty)
+    }
+
+    func testRecoveringRecurrentEventReturnsItToRecurrentEvents() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let startDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 4)))
+
+        var event = store.addTodo(title: "Weekly sync", dueDate: startDate)
+        event.recurrenceRule = RecurrenceRule(frequency: .weekly, weekday: 2)
+        store.update(event)
+
+        store.delete(id: event.id)
+
+        XCTAssertNil(store.todo(id: event.id))
+        XCTAssertEqual(store.trashTodo(id: event.id)?.trashOrigin, .recurrent)
+
+        store.recoverTrash(ids: [event.id])
+
+        XCTAssertEqual(store.filteredItems(for: .recurrent).map(\.id), [event.id])
+        XCTAssertEqual(store.filteredItems(for: .all).map(\.id), [])
+    }
+
+    func testDeleteTagAndTasksMovesTaggedTasksToTrash() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let tag = store.addTag(name: "Work")
+        var taggedTask = store.addTodo(title: "Tagged")
+        taggedTask.tagID = tag.id
+        store.update(taggedTask)
+        let untaggedTask = store.addTodo(title: "Untagged")
+
+        store.deleteTagAndTasks(id: tag.id)
+
+        XCTAssertTrue(store.tags.isEmpty)
+        XCTAssertNil(store.todo(id: taggedTask.id))
+        XCTAssertNotNil(store.trashTodo(id: taggedTask.id))
+        XCTAssertNotNil(store.todo(id: untaggedTask.id))
+    }
+
+    func testLifecycleMovesOldCompletedTasksAndClearsOldTrash() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let referenceDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 5)))
+        let oldDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let recentDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 4)))
+
+        var oldCompleted = store.addTodo(title: "Old completed")
+        oldCompleted.isCompleted = true
+        oldCompleted.completedAt = oldDate
+        store.update(oldCompleted)
+
+        var recentCompleted = store.addTodo(title: "Recent completed")
+        recentCompleted.isCompleted = true
+        recentCompleted.completedAt = recentDate
+        store.update(recentCompleted)
+
+        let oldTrash = store.addTodo(title: "Old trash")
+        let recentTrash = store.addTodo(title: "Recent trash")
+        store.moveToTrash(ids: [oldTrash.id], deletionDate: oldDate)
+        store.moveToTrash(ids: [recentTrash.id], deletionDate: recentDate)
+
+        XCTAssertTrue(store.applyLifecycle(referenceDate: referenceDate, calendar: calendar))
+
+        XCTAssertNil(store.todo(id: oldCompleted.id))
+        XCTAssertNotNil(store.trashTodo(id: oldCompleted.id))
+        XCTAssertNotNil(store.todo(id: recentCompleted.id))
+        XCTAssertNil(store.trashTodo(id: oldTrash.id))
+        XCTAssertNotNil(store.trashTodo(id: recentTrash.id))
+    }
+
+    func testTagsPersistWithSnapshot() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let tag = store.addTag(name: "Errands")
+        store.updateTagColor(id: tag.id, color: .purple)
+        var task = store.addTodo(title: "Buy stamps")
+        task.tagID = tag.id
+        store.update(task)
+
+        let reloadedStore = TodoStore(persistence: persistence, seedSamples: false)
+        let reloadedTag = try XCTUnwrap(reloadedStore.tags.first)
+
+        XCTAssertEqual(reloadedTag.name, "Errands")
+        XCTAssertEqual(reloadedTag.color, .purple)
+        XCTAssertEqual(reloadedStore.todo(id: task.id)?.tagID, tag.id)
+    }
+
     func testCompletingMainCompletesSubtasksButCompletedSubtasksDoNotCompleteMain() throws {
         let persistence = TodoPersistence(fileURL: try temporaryFileURL())
         let store = TodoStore(persistence: persistence, seedSamples: false)
@@ -417,6 +618,31 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertNil(item.endDate)
         XCTAssertEqual(item.order, 0)
         XCTAssertTrue(item.subtasks.isEmpty)
+    }
+
+    func testLoadsSnapshotWithoutTrashItems() throws {
+        let fileURL = try temporaryFileURL()
+        let todoID = UUID()
+        let legacySnapshotJSON = """
+        {
+          "items": [
+            {
+              "id": "\(todoID.uuidString)",
+              "title": "Snapshot todo",
+              "isCompleted": false
+            }
+          ],
+          "recurrentEvents": [],
+          "tags": []
+        }
+        """
+
+        try XCTUnwrap(legacySnapshotJSON.data(using: .utf8)).write(to: fileURL)
+
+        let snapshot = try TodoPersistence.loadSnapshot(from: fileURL)
+
+        XCTAssertEqual(snapshot.items.map(\.id), [todoID])
+        XCTAssertTrue(snapshot.trashItems.isEmpty)
     }
 
     private func temporaryFileURL() throws -> URL {

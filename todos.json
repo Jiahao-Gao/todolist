@@ -1,0 +1,161 @@
+{
+  "items" : [
+    {
+      "id" : "A01AEF4C-35AC-4038-A5B3-8737D723DB72",
+      "isCompleted" : false,
+      "notes" : "Sub inherent tag.\nMain date for due\/today\/upcoming depend on [earliest] [un-complete] sub",
+      "order" : 0,
+      "subtasks" : [
+        {
+          "dueDate" : "2026-01-02T01:00:16Z",
+          "id" : "19B7E7CE-F1EB-4DE0-88E9-E6ADB0C9C009",
+          "isCompleted" : true,
+          "notes" : "",
+          "order" : 0,
+          "subtasks" : [
+
+          ],
+          "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+          "title" : "Subtask1"
+        },
+        {
+          "dueDate" : "2026-06-10T23:57:33Z",
+          "id" : "EC33E036-0C3B-47C9-BA0C-434668A4F922",
+          "isCompleted" : false,
+          "notes" : "",
+          "order" : 1,
+          "subtasks" : [
+
+          ],
+          "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+          "title" : "Subtask2"
+        },
+        {
+          "dueDate" : "2026-10-02T00:01:14Z",
+          "id" : "BB5F7DA9-D6EE-4650-89E2-38395DD2BAE1",
+          "isCompleted" : false,
+          "notes" : "",
+          "order" : 2,
+          "subtasks" : [
+
+          ],
+          "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+          "title" : "Subtask3"
+        }
+      ],
+      "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+      "title" : "Due upcoming"
+    },
+    {
+      "dueDate" : "2026-05-01T23:58:57Z",
+      "id" : "AAACFB7E-0A0D-4B4E-BA00-E4BFB2131E54",
+      "isCompleted" : false,
+      "notes" : "Complete all sub does not complete main",
+      "order" : 1,
+      "subtasks" : [
+        {
+          "id" : "3CC633FD-5237-4405-9C64-E09E16D24A60",
+          "isCompleted" : true,
+          "notes" : "",
+          "order" : 0,
+          "subtasks" : [
+
+          ],
+          "title" : "Sub2"
+        },
+        {
+          "id" : "7D648F25-A4E1-4221-A4B0-935829C21079",
+          "isCompleted" : true,
+          "notes" : "",
+          "order" : 1,
+          "subtasks" : [
+
+          ],
+          "title" : "Sub1"
+        }
+      ],
+      "title" : "Due overdue"
+    },
+    {
+      "dueDate" : "2026-06-01T23:56:31Z",
+      "id" : "E02AE69C-7C8F-4A00-8D49-AA810659010C",
+      "isCompleted" : false,
+      "notes" : "",
+      "order" : 2,
+      "subtasks" : [
+
+      ],
+      "tagID" : "54BABCA4-E808-4CD4-B9AF-C6D1840F4233",
+      "title" : "Due today"
+    },
+    {
+      "dueDate" : "2026-06-01T07:00:00Z",
+      "id" : "5173B786-60D6-4206-8F09-05C8798489CA",
+      "isCompleted" : false,
+      "notes" : "This is the “parent” object of a recurrent event.\nIf today is a match, it will create a “child” event in “All” section.\nA recurrent event is evaluate when the app start. When a new recurrent event is created and today is a match, restart the app to have it shown in “All”.\nThe “child” object is the same as a normal task. It inherit everything from the “parent” but can be edited. Changed will not be saved in the “parent” object.",
+      "order" : 3,
+      "recurrenceOccurrenceDate" : "2026-06-01T07:00:00Z",
+      "recurrenceSourceID" : "7A22DED7-8648-4A42-B579-0D8AA1B1422D",
+      "subtasks" : [
+
+      ],
+      "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+      "title" : "RecurrentDailyObject"
+    },
+    {
+      "dueDate" : "2026-01-02T01:02:58Z",
+      "endDate" : "2027-01-01T01:02:58Z",
+      "id" : "C0FFF846-C927-451F-9913-8D0A70B9F815",
+      "isCompleted" : false,
+      "notes" : "A event lasting for multiple days. Show up in the different sections based on different criteria:\n\tToday: any time in range\n\tUpcoming: depend on start date\n\tOverdue: depend on end date\n\nNote it is different to a recurrent event happening everyday",
+      "order" : 4,
+      "subtasks" : [
+
+      ],
+      "title" : "Multi-day"
+    },
+    {
+      "id" : "BCA16E2A-900F-4031-8C88-579C323700AF",
+      "isCompleted" : false,
+      "notes" : "Cmd+N: create new task\n\nData is saved at ~\/Library\/Application Support\/TodoList\/todos.json\n\nIn “All”, tasks can be dragged to sort or to be a subtask of another main. Only one layer of sub is supported.\n\nSearching currently search in title and notes.\n\nTask in “Completed” will be automatically deleted in 3 days. Task in “Trash” will be automatically cleared in 3 days.\n\n",
+      "order" : 5,
+      "subtasks" : [
+
+      ],
+      "title" : "Misc"
+    }
+  ],
+  "recurrentEvents" : [
+    {
+      "dueDate" : "2026-06-02T00:06:10Z",
+      "id" : "7A22DED7-8648-4A42-B579-0D8AA1B1422D",
+      "isCompleted" : false,
+      "notes" : "This is the “parent” object of a recurrent event.\nIf today is a match, it will create a “child” event in “All” section.\nA recurrent event is evaluate when the app start. When a new recurrent event is created and today is a match, restart the app to have it shown in “All”.\nThe “child” object is the same as a normal task. It inherit everything from the “parent” but can be edited. Changed will not be saved in the “parent” object.",
+      "order" : 0,
+      "recurrenceRule" : {
+        "dayOfMonth" : 1,
+        "frequency" : "daily",
+        "weekday" : 2
+      },
+      "subtasks" : [
+
+      ],
+      "tagID" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+      "title" : "RecurrentDailyObject"
+    }
+  ],
+  "tags" : [
+    {
+      "color" : "blue",
+      "id" : "54BABCA4-E808-4CD4-B9AF-C6D1840F4233",
+      "name" : "Tag1",
+      "order" : 0
+    },
+    {
+      "color" : "yellow",
+      "id" : "F65E0BA7-C713-4C2E-B1CA-A1C17384DABB",
+      "name" : "Tag2",
+      "order" : 1
+    }
+  ]
+}

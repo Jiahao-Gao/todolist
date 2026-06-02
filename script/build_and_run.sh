@@ -15,6 +15,7 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Assets/AppIcon.icns"
+DEMO_TODOS_SOURCE="$ROOT_DIR/todos.json"
 
 cd "$ROOT_DIR"
 
@@ -36,6 +37,10 @@ chmod +x "$APP_BINARY"
 
 if [[ -f "$APP_ICON_SOURCE" ]]; then
   cp "$APP_ICON_SOURCE" "$APP_RESOURCES/AppIcon.icns"
+fi
+
+if [[ -f "$DEMO_TODOS_SOURCE" ]]; then
+  cp "$DEMO_TODOS_SOURCE" "$APP_RESOURCES/todos.json"
 fi
 
 cat >"$INFO_PLIST" <<PLIST

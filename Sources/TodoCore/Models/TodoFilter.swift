@@ -6,6 +6,7 @@ public enum TodoFilter: String, CaseIterable, Identifiable, Sendable {
     case upcoming
     case completed
     case overdue
+    case recurrent
 
     public var id: String { rawValue }
 
@@ -21,6 +22,8 @@ public enum TodoFilter: String, CaseIterable, Identifiable, Sendable {
             "Overdue"
         case .completed:
             "Completed"
+        case .recurrent:
+            "Recurrent"
         }
     }
 
@@ -36,6 +39,8 @@ public enum TodoFilter: String, CaseIterable, Identifiable, Sendable {
             "exclamationmark.triangle"
         case .completed:
             "checkmark.circle"
+        case .recurrent:
+            "r.circle"
         }
     }
 
@@ -51,6 +56,8 @@ public enum TodoFilter: String, CaseIterable, Identifiable, Sendable {
             item.isOverdue(referenceDate: referenceDate, calendar: calendar)
         case .completed:
             item.isCompleted
+        case .recurrent:
+            item.recurrenceRule != nil
         }
     }
 }

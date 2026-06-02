@@ -4,23 +4,27 @@ import TodoCore
 struct ContentView: View {
     @ObservedObject var store: TodoStore
 
-    @SceneStorage("selectedFilter") private var selectedFilterRawValue = TodoFilter.all.rawValue
+    @SceneStorage("selectedSidebarItem") private var selectedSidebarItemRawValue = TodoSidebarSelection.filter(.all).storageValue
     @SceneStorage("selectedTodoID") private var selectedTodoIDRawValue: String?
     @State private var searchText = ""
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store, selection: selectedFilter)
+            SidebarView(store: store, selection: selectedSidebarSelection)
         } content: {
             TodoListView(
-                title: currentFilter.title,
+                title: currentTitle,
                 items: filteredItems,
+                store: store,
                 selection: selectedTodoID,
                 addAction: addTodo,
                 deleteAction: deleteTodos,
-                toggleAction: store.toggleCompletion(id:),
+                clearTrashAction: clearTrash,
+                recoverTrashAction: recoverTrash,
+                toggleAction: toggleTodoFromList(id:),
                 addSubtaskAction: addSubtask(to:),
-                isReorderingEnabled: currentFilter == .all,
+                isTrashMode: currentSidebarSelection == .trash,
+                isReorderingEnabled: currentSidebarSelection == .filter(.all),
                 moveBeforeAction: moveTodoBefore(_:_:),
                 moveAfterAction: moveTodoAfter(_:_:),
                 moveAsSubtaskAction: moveTodoAsSubtask(_:_:),
@@ -31,9 +35,17 @@ struct ContentView: View {
             if let todo = selectedTodo {
                 TodoDetailView(
                     todo: todo,
+                    tags: store.tags,
+                    parentTodo: selectedParentTodo,
+                    recurrenceSourceTodo: selectedRecurrenceSourceTodo,
+                    isEditable: currentSidebarSelection != .trash,
                     canAddSubtasks: selectedTodoCanAddSubtasks,
+                    canEditTag: selectedTodoCanEditTag,
+                    canConfigureRecurrence: selectedTodoCanConfigureRecurrence,
                     addSubtaskAction: addSubtaskToSelectedTodo,
-                    selectTodoAction: selectTodo(id:)
+                    selectTodoAction: selectTodo(id:),
+                    selectParentAction: selectParentTodo,
+                    selectRecurrenceSourceAction: selectRecurrenceSourceTodo
                 )
             } else {
                 EmptyDetailView(addAction: addTodo)
@@ -49,13 +61,13 @@ struct ContentView: View {
                 Button(action: sortAllTodosByDate) {
                     Label("Sort Todos", systemImage: "arrow.up.arrow.down")
                 }
-                .help(currentFilter == .all ? "Sort Todos by Date" : "Sort is available in All")
-                .disabled(currentFilter != .all)
+                .help(currentSidebarSelection == .filter(.all) ? "Sort Todos by Date" : "Sort is available in All")
+                .disabled(currentSidebarSelection != .filter(.all))
 
                 Button(role: .destructive, action: deleteSelectedTodo) {
                     Label("Delete Todo", systemImage: "trash")
                 }
-                .help("Delete Todo")
+                .help(currentSidebarSelection == .trash ? "Clear Todo" : "Delete Todo")
                 .disabled(selectedTodoID.wrappedValue == nil)
             }
         }
@@ -72,19 +84,37 @@ struct ContentView: View {
         )
     }
 
-    private var currentFilter: TodoFilter {
-        TodoFilter(rawValue: selectedFilterRawValue) ?? .all
+    private var currentSidebarSelection: TodoSidebarSelection {
+        TodoSidebarSelection(storageValue: selectedSidebarItemRawValue)
     }
 
     private var filteredItems: [TodoItem] {
-        store.filteredItems(for: currentFilter, searchText: searchText)
+        switch currentSidebarSelection {
+        case let .filter(filter):
+            store.filteredItems(for: filter, searchText: searchText)
+        case let .tag(tagID):
+            store.filteredItems(forTag: tagID, searchText: searchText)
+        case .trash:
+            store.filteredTrashItems(searchText: searchText)
+        }
     }
 
-    private var selectedFilter: Binding<TodoFilter> {
+    private var currentTitle: String {
+        switch currentSidebarSelection {
+        case let .filter(filter):
+            filter.title
+        case let .tag(tagID):
+            store.tag(id: tagID)?.name ?? "Tag"
+        case .trash:
+            "Trash"
+        }
+    }
+
+    private var selectedSidebarSelection: Binding<TodoSidebarSelection> {
         Binding {
-            currentFilter
+            currentSidebarSelection
         } set: { newValue in
-            selectedFilterRawValue = newValue.rawValue
+            selectedSidebarItemRawValue = newValue.storageValue
         }
     }
 
@@ -97,7 +127,21 @@ struct ContentView: View {
     }
 
     private var selectedTodo: Binding<TodoItem>? {
-        guard let id = selectedTodoID.wrappedValue, store.todo(id: id) != nil else {
+        guard let id = selectedTodoID.wrappedValue else {
+            return nil
+        }
+
+        if currentSidebarSelection == .trash {
+            guard store.trashTodo(id: id) != nil else {
+                return nil
+            }
+
+            return Binding {
+                store.trashTodo(id: id) ?? TodoItem(title: "")
+            } set: { _ in }
+        }
+
+        guard store.todo(id: id) != nil else {
             return nil
         }
 
@@ -105,10 +149,20 @@ struct ContentView: View {
             store.todo(id: id) ?? TodoItem(title: "")
         } set: { updatedItem in
             store.update(updatedItem)
+
+            if store.isRecurrentEvent(id: updatedItem.id) {
+                selectedSidebarItemRawValue = TodoSidebarSelection.filter(.recurrent).storageValue
+            } else if currentSidebarSelection == .filter(.recurrent) {
+                selectedSidebarItemRawValue = TodoSidebarSelection.filter(.all).storageValue
+            }
         }
     }
 
     private var selectedTodoCanAddSubtasks: Bool {
+        guard currentSidebarSelection != .trash else {
+            return false
+        }
+
         guard let id = selectedTodoID.wrappedValue else {
             return false
         }
@@ -116,16 +170,86 @@ struct ContentView: View {
         return store.isMainTodo(id: id)
     }
 
+    private var selectedTodoCanEditTag: Bool {
+        guard currentSidebarSelection != .trash else {
+            return false
+        }
+
+        guard let id = selectedTodoID.wrappedValue else {
+            return false
+        }
+
+        return store.isMainTodo(id: id)
+    }
+
+    private var selectedTodoCanConfigureRecurrence: Bool {
+        guard currentSidebarSelection != .trash else {
+            return false
+        }
+
+        guard let id = selectedTodoID.wrappedValue,
+              store.isMainTodo(id: id),
+              store.todo(id: id)?.recurrenceSourceID == nil else {
+            return false
+        }
+
+        return true
+    }
+
+    private var selectedParentTodo: TodoItem? {
+        guard currentSidebarSelection != .trash else {
+            return nil
+        }
+
+        guard let id = selectedTodoID.wrappedValue else {
+            return nil
+        }
+
+        return store.parentTodo(for: id)
+    }
+
+    private var selectedRecurrenceSourceTodo: TodoItem? {
+        guard currentSidebarSelection != .trash else {
+            return nil
+        }
+
+        guard let todo = selectedTodo?.wrappedValue else {
+            return nil
+        }
+
+        return store.recurrenceSource(for: todo)
+    }
+
     private func addTodo() {
         let todo = store.addTodo()
-        selectedFilterRawValue = TodoFilter.all.rawValue
+        selectedSidebarItemRawValue = TodoSidebarSelection.filter(.all).storageValue
         selectedTodoID.wrappedValue = todo.id
     }
 
     private func deleteTodos(_ ids: Set<TodoItem.ID>) {
-        store.delete(ids: ids)
+        if currentSidebarSelection == .trash {
+            store.clearTrash(ids: ids)
+        } else {
+            store.delete(ids: ids)
+        }
 
-        if let selectedID = selectedTodoID.wrappedValue, store.todo(id: selectedID) == nil {
+        if selectedTodo == nil {
+            selectedTodoID.wrappedValue = nil
+        }
+    }
+
+    private func clearTrash(_ ids: Set<TodoItem.ID>) {
+        store.clearTrash(ids: ids)
+
+        if selectedTodo == nil {
+            selectedTodoID.wrappedValue = nil
+        }
+    }
+
+    private func recoverTrash(_ ids: Set<TodoItem.ID>) {
+        store.recoverTrash(ids: ids)
+
+        if selectedTodo == nil {
             selectedTodoID.wrappedValue = nil
         }
     }
@@ -139,6 +263,10 @@ struct ContentView: View {
     }
 
     private func toggleSelectedTodo() {
+        guard currentSidebarSelection != .trash else {
+            return
+        }
+
         guard let selectedID = selectedTodoID.wrappedValue else {
             return
         }
@@ -155,7 +283,7 @@ struct ContentView: View {
     }
 
     private func sortAllTodosByDate() {
-        guard currentFilter == .all else {
+        guard currentSidebarSelection == .filter(.all) else {
             return
         }
 
@@ -163,6 +291,10 @@ struct ContentView: View {
     }
 
     private func addSubtaskToSelectedTodo() {
+        guard currentSidebarSelection != .trash else {
+            return
+        }
+
         guard let selectedID = selectedTodoID.wrappedValue else {
             return
         }
@@ -174,12 +306,42 @@ struct ContentView: View {
         selectedTodoID.wrappedValue = id
     }
 
+    private func selectParentTodo() {
+        guard let parent = selectedParentTodo else {
+            return
+        }
+
+        selectedSidebarItemRawValue = TodoSidebarSelection.filter(.all).storageValue
+        selectedTodoID.wrappedValue = parent.id
+    }
+
+    private func selectRecurrenceSourceTodo() {
+        guard let recurrenceSource = selectedRecurrenceSourceTodo else {
+            return
+        }
+
+        selectedSidebarItemRawValue = TodoSidebarSelection.filter(.recurrent).storageValue
+        selectedTodoID.wrappedValue = recurrenceSource.id
+    }
+
     private func addSubtask(to parentID: TodoItem.ID) {
+        guard currentSidebarSelection != .trash else {
+            return
+        }
+
         guard let subtask = store.addSubtask(to: parentID) else {
             return
         }
 
         selectTodo(id: subtask.id)
+    }
+
+    private func toggleTodoFromList(id: TodoItem.ID) {
+        guard currentSidebarSelection != .trash else {
+            return
+        }
+
+        store.toggleCompletion(id: id)
     }
 
     private func moveTodoBefore(_ todoID: TodoItem.ID, _ targetID: TodoItem.ID) {

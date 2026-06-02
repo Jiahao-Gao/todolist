@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
 struct TodoListView: View {
     let title: String
     let items: [TodoItem]
+    @ObservedObject var store: TodoStore
     @Binding var selection: TodoItem.ID?
     let addAction: () -> Void
     let deleteAction: (Set<TodoItem.ID>) -> Void
+    let clearTrashAction: (Set<TodoItem.ID>) -> Void
+    let recoverTrashAction: (Set<TodoItem.ID>) -> Void
     let toggleAction: (TodoItem.ID) -> Void
     let addSubtaskAction: (TodoItem.ID) -> Void
+    let isTrashMode: Bool
     let isReorderingEnabled: Bool
     let moveBeforeAction: (TodoItem.ID, TodoItem.ID) -> Void
     let moveAfterAction: (TodoItem.ID, TodoItem.ID) -> Void
@@ -27,13 +31,21 @@ struct TodoListView: View {
     var body: some View {
         Group {
             if items.isEmpty {
-                ContentUnavailableView {
-                    Label("No Todos", systemImage: "checklist")
-                } description: {
-                    Text("Create a todo or adjust the current filter.")
-                } actions: {
-                    Button(action: addAction) {
-                        Label("New Todo", systemImage: "plus")
+                if isTrashMode {
+                    ContentUnavailableView {
+                        Label("Trash Empty", systemImage: "trash")
+                    } description: {
+                        Text("Deleted todos appear here.")
+                    }
+                } else {
+                    ContentUnavailableView {
+                        Label("No Todos", systemImage: "checklist")
+                    } description: {
+                        Text("Create a todo or adjust the current filter.")
+                    } actions: {
+                        Button(action: addAction) {
+                            Label("New Todo", systemImage: "plus")
+                        }
                     }
                 }
             } else {
@@ -51,7 +63,12 @@ struct TodoListView: View {
                     }
                     .onDelete { indexSet in
                         let ids = Set(indexSet.map { visibleRows[$0].todoID })
-                        deleteAction(ids)
+
+                        if isTrashMode {
+                            clearTrashAction(ids)
+                        } else {
+                            deleteAction(ids)
+                        }
                     }
 
                     if isReorderingEnabled {
@@ -78,11 +95,17 @@ struct TodoListView: View {
                     Button {
                         toggleExpansion(for: item.id)
                     } label: {
-                        Image(systemName: isExpanded(item) ? "chevron.down" : "chevron.right")
-                            .font(.caption)
-                            .frame(width: 14)
-                            .opacity(item.subtasks.isEmpty ? 0 : 1)
-                            .foregroundStyle(selection == item.id ? .white : .secondary)
+                        ZStack {
+                            Circle()
+                                .fill(Color.clear)
+
+                            Image(systemName: isExpanded(item) ? "chevron.down" : "chevron.right")
+                                .font(.caption)
+                                .opacity(item.subtasks.isEmpty ? 0 : 1)
+                                .foregroundStyle(selection == item.id ? .white : .secondary)
+                        }
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(item.subtasks.isEmpty)
@@ -90,11 +113,14 @@ struct TodoListView: View {
 
                     TodoRowView(
                         todo: item,
+                        tag: store.effectiveTag(for: item),
                         isSelected: selection == item.id,
+                        isReadOnly: isTrashMode,
                         toggleAction: {
                             toggleAction(item.id)
                         }
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         selection = item.id
@@ -131,17 +157,14 @@ struct TodoListView: View {
                 deselectGap(height: subtaskGap)
 
                 HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: subtaskIndent)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selection = nil
-                        }
+                    subtaskConnector(isLastInGroup: isLastInGroup)
 
                     TodoRowView(
                         todo: subtask,
+                        tag: store.effectiveTag(for: subtask),
                         isSubtask: true,
                         isSelected: selection == subtask.id,
+                        isReadOnly: isTrashMode,
                         toggleAction: {
                             toggleAction(subtask.id)
                         }
@@ -256,18 +279,28 @@ struct TodoListView: View {
 
     @ViewBuilder
     private func contextMenu(for item: TodoItem, canAddSubtask: Bool) -> some View {
-        Button(item.isCompleted ? "Mark Incomplete" : "Mark Complete") {
-            toggleAction(item.id)
-        }
-
-        if canAddSubtask {
-            Button("Add Subtask") {
-                addSubtaskAction(item.id)
+        if isTrashMode {
+            Button("Recover") {
+                recoverTrashAction([item.id])
             }
-        }
 
-        Button("Delete", role: .destructive) {
-            deleteAction([item.id])
+            Button("Clear", role: .destructive) {
+                clearTrashAction([item.id])
+            }
+        } else {
+            Button(item.isCompleted ? "Mark Incomplete" : "Mark Complete") {
+                toggleAction(item.id)
+            }
+
+            if canAddSubtask {
+                Button("Add Subtask") {
+                    addSubtaskAction(item.id)
+                }
+            }
+
+            Button("Delete", role: .destructive) {
+                deleteAction([item.id])
+            }
         }
     }
 
@@ -324,6 +357,33 @@ struct TodoListView: View {
             .onTapGesture {
                 selection = nil
             }
+    }
+
+    private func subtaskConnector(isLastInGroup: Bool) -> some View {
+        GeometryReader { proxy in
+            let mainCircleX: CGFloat = 27
+            let subtaskCircleX = subtaskIndent - 10
+            let centerY = proxy.size.height / 2
+
+            ZStack(alignment: .topLeading) {
+                Color.clear
+
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.42))
+                    .frame(width: 1, height: isLastInGroup ? centerY : proxy.size.height)
+                    .position(x: mainCircleX, y: (isLastInGroup ? centerY : proxy.size.height) / 2)
+
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.42))
+                    .frame(width: max(0, subtaskCircleX - mainCircleX), height: 1)
+                    .position(x: (mainCircleX + subtaskCircleX) / 2, y: centerY)
+            }
+        }
+        .frame(width: subtaskIndent)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selection = nil
+        }
     }
 
     private var mainGroupSeparator: some View {
