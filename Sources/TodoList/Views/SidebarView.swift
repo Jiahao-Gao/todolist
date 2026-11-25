@@ -7,46 +7,55 @@ struct SidebarView: View {
     @AppStorage(AppTypography.fontNameStorageKey) private var appFontName = AppTypography.defaultFontName
     @State private var renamingTagID: TodoTag.ID?
     @State private var renamingTagName = ""
+    private let countColumnWidth: CGFloat = 28
 
     var body: some View {
         VStack(spacing: 0) {
             List(selection: sidebarSelection) {
-                Section("Todos") {
+                Group {
+                    Text("Todos")
+                        .font(AppTypography.small(appFontName).weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                        .selectionDisabled()
+
                     ForEach(TodoFilter.allCases) { filter in
-                        Label {
-                            HStack {
-                                Text(filter.title)
-                                    .font(AppTypography.body(appFontName))
-
-                                Spacer()
-
-                                Text("\(store.count(for: filter))")
-                                    .font(AppTypography.small(appFontName))
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
+                        HStack(spacing: 8) {
                             Image(systemName: filter.systemImage)
                                 .foregroundStyle(.secondary)
+                                .frame(width: 20)
+
+                            Text(filter.title)
+                                .font(AppTypography.body(appFontName))
+
+                            Spacer()
+
+                            Text("\(store.count(for: filter))")
+                                .font(AppTypography.small(appFontName))
+                                .foregroundStyle(.secondary)
+                                .frame(width: countColumnWidth, alignment: .center)
                         }
                         .tag(TodoSidebarSelection.filter(filter))
                     }
                 }
 
-                Section {
+                Group {
+                    tagHeading
+                        .selectionDisabled()
+
                     ForEach(store.tags) { tag in
-                        Label {
-                            HStack {
-                                Text(tag.name)
-                                    .font(AppTypography.body(appFontName))
-
-                                Spacer()
-
-                                Text("\(store.count(forTag: tag.id))")
-                                    .font(AppTypography.small(appFontName))
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
+                        HStack(spacing: 8) {
                             TodoTagIcon(color: tag.color, width: 24, height: 18)
+
+                            Text(tag.name)
+                                .font(AppTypography.body(appFontName))
+
+                            Spacer()
+
+                            Text("\(store.count(forTag: tag.id))")
+                                .font(AppTypography.small(appFontName))
+                                .foregroundStyle(.secondary)
+                                .frame(width: countColumnWidth, alignment: .center)
                         }
                         .tag(TodoSidebarSelection.tag(tag.id))
                         .contextMenu {
@@ -80,32 +89,6 @@ struct SidebarView: View {
                             }
                         }
                     }
-                } header: {
-                    VStack(spacing: 12) {
-                        Rectangle()
-                            .fill(Color.secondary.opacity(0.34))
-                            .frame(height: 1)
-
-                        HStack {
-                            Text("Tag")
-
-                            Spacer()
-
-                            Button {
-                                let tag = store.addTag()
-                                selection = .tag(tag.id)
-                                renamingTagID = tag.id
-                                renamingTagName = tag.name
-                            } label: {
-                                Image(systemName: "plus.circle")
-                            }
-                            .buttonStyle(.plain)
-                            .help("New Tag")
-                        }
-                        .padding(.trailing, 11)
-                        .padding(.bottom, 5)
-                    }
-                    .padding(.top, 14)
                 }
 
                 if let errorMessage = store.lastErrorMessage {
@@ -132,6 +115,11 @@ struct SidebarView: View {
                 )
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("clear", role: .destructive) {
+                    store.clearTrash(ids: Set(store.trashItems.map(\.id)))
+                }
+            }
             .padding(.horizontal, 8)
             .padding(.top, 8)
 
@@ -167,6 +155,37 @@ struct SidebarView: View {
         }
     }
 
+    private var tagHeading: some View {
+        VStack(spacing: 12) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.34))
+                .frame(height: 1)
+
+            HStack {
+                Text("Tag")
+                    .accessibilityAddTraits(.isHeader)
+
+                Spacer()
+
+                Button {
+                    let tag = store.addTag()
+                    selection = .tag(tag.id)
+                    renamingTagID = tag.id
+                    renamingTagName = tag.name
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .frame(width: countColumnWidth, alignment: .center)
+                }
+                .buttonStyle(.plain)
+                .help("New Tag")
+            }
+            .padding(.bottom, 5)
+        }
+        .font(AppTypography.small(appFontName).weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.top, 14)
+    }
+
     private var sidebarSelection: Binding<TodoSidebarSelection?> {
         Binding {
             selection
@@ -197,6 +216,7 @@ struct SidebarView: View {
                 Text("\(count)")
                     .font(AppTypography.small(appFontName))
                     .foregroundStyle(.secondary)
+                    .frame(width: countColumnWidth, alignment: .center)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -461,6 +461,31 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(store.filteredTrashItems().isEmpty)
     }
 
+    func testClearAllTrashPreservesActiveTasksAndPersists() throws {
+        let persistence = TodoPersistence(fileURL: try temporaryFileURL())
+        let store = TodoStore(persistence: persistence, seedSamples: false)
+        let active = store.addTodo(title: "Keep me")
+        let first = store.addTodo(title: "First deleted task")
+        let child = try XCTUnwrap(
+            store.addSubtask(to: first.id, title: "Deleted child")
+        )
+        let second = store.addTodo(title: "Second deleted task")
+        store.moveToTrash(ids: [first.id, second.id])
+
+        store.clearTrash(ids: Set(store.trashItems.map(\.id)))
+
+        XCTAssertEqual(store.trashCount(), 0)
+        XCTAssertNil(store.trashTodo(id: child.id))
+        XCTAssertEqual(store.items.map(\.id), [active.id])
+
+        let reloadedStore = TodoStore(persistence: persistence, seedSamples: false)
+        XCTAssertTrue(reloadedStore.trashItems.isEmpty)
+        XCTAssertEqual(reloadedStore.items.map(\.id), [active.id])
+
+        store.clearTrash(ids: Set(store.trashItems.map(\.id)))
+        XCTAssertEqual(store.items.map(\.id), [active.id])
+    }
+
     func testRecoveringRecurrentEventReturnsItToRecurrentEvents() throws {
         let persistence = TodoPersistence(fileURL: try temporaryFileURL())
         let store = TodoStore(persistence: persistence, seedSamples: false)
